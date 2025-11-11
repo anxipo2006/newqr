@@ -255,6 +255,23 @@ export const deleteEmployee = (id: string): void => {
   const updatedRecords = records.filter(rec => rec.employeeId !== id);
   localStorage.setItem(RECORDS_KEY, JSON.stringify(updatedRecords));
 };
+const firebaseConfig = {
+
+  apiKey: "AIzaSyCDtSJOvvOcakG3ZzxAZcC8wwCHBJoSIxE",
+
+  authDomain: "qrcheck-4db34.firebaseapp.com",
+
+  projectId: "qrcheck-4db34",
+
+  storageBucket: "qrcheck-4db34.firebasestorage.app",
+
+  messagingSenderId: "187674911175",
+
+  appId: "1:187674911175:web:714ea8a1ce52f38070f9e2",
+
+  measurementId: "G-4PL87N83M7"
+
+};
 
 // --- Attendance Management ---
 
