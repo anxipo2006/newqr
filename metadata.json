@@ -1,0 +1,8 @@
+{
+  "name": "Hệ thống chấm công QR",
+  "description": "Một ứng dụng web chuyên nghiệp để nhân viên chấm công bằng cách quét mã QR động. Quản trị viên có thể quản lý nhân viên và xem nhật ký chấm công.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
