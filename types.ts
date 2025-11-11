@@ -19,8 +19,8 @@ export interface Employee {
   password: string; // Hashing should be used in a real app
   name: string; // Display name
   deviceCode: string; // 5-character unique device/account identifier
-  shiftId?: string; // Optional link to a Shift
-  locationId?: string; // Optional link to a Location
+  shiftId?: string | null; // Optional link to a Shift, allow null for "no shift"
+  locationId?: string | null; // Optional link to a Location, allow null for "no location"
 }
 
 // FIX: Add CurrentUser type definition here to be shared across the app.

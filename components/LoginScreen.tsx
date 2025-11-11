@@ -22,26 +22,30 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    setTimeout(() => {
+    try {
       let user: CurrentUser | null = null;
       if (activeTab === 'employee') {
-        user = login('employee', { deviceCode });
+        user = await login('employee', { deviceCode });
         if (!user) setError('Mã chấm công không hợp lệ.');
       } else {
-        user = login('admin', { username, password });
+        user = await login('admin', { username, password });
         if (!user) setError('Tên đăng nhập hoặc mật khẩu không chính xác.');
       }
       
       if (user) {
         onLogin(user);
       }
-      setIsLoading(false);
-    }, 500);
+    } catch (err) {
+        console.error("Login failed:", err);
+        setError('Đã xảy ra lỗi. Vui lòng thử lại.');
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   const renderEmployeeForm = () => (

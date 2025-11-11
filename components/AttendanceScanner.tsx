@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Employee, AttendanceRecord } from '../types';
 import { AttendanceStatus } from '../types';
 import { addAttendanceRecord, getLastRecordForEmployee } from '../services/attendanceService';
@@ -8,7 +8,7 @@ import { formatTimestamp } from '../utils/date';
 
 interface AttendanceScannerProps {
   employee: Employee;
-  onScanComplete: () => void;
+  onScanComplete: () => Promise<void>;
 }
 
 type ScanState = 'idle' | 'scanning' | 'processing' | 'success' | 'error';
@@ -18,9 +18,17 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ employee, onScanC
   const [errorMessage, setErrorMessage] = useState('');
   const [processingMessage, setProcessingMessage] = useState('');
   const [receipt, setReceipt] = useState<AttendanceRecord | null>(null);
+  const [nextAction, setNextAction] = useState<AttendanceStatus>(AttendanceStatus.CHECK_IN);
+  
+  useEffect(() => {
+    const determineNextAction = async () => {
+      const lastRecord = await getLastRecordForEmployee(employee.id);
+      setNextAction(lastRecord?.status === AttendanceStatus.CHECK_IN ? AttendanceStatus.CHECK_OUT : AttendanceStatus.CHECK_IN);
+    };
+    determineNextAction();
+  }, [employee.id]);
 
-  const lastRecord = getLastRecordForEmployee(employee.id);
-  const nextAction = lastRecord?.status === AttendanceStatus.CHECK_IN ? AttendanceStatus.CHECK_OUT : AttendanceStatus.CHECK_IN;
+
   const nextActionText = nextAction === AttendanceStatus.CHECK_IN ? 'Check-in' : 'Check-out';
 
   const showResult = (state: 'error' | 'success', record?: AttendanceRecord, message?: string) => {
@@ -60,26 +68,26 @@ const AttendanceScanner: React.FC<AttendanceScannerProps> = ({ employee, onScanC
       };
       
       setProcessingMessage(`Đang xác thực ${nextActionText}...`);
-      const newRecord = addAttendanceRecord(employee.id, nextAction, locationId, coords);
+      const newRecord = await addAttendanceRecord(employee.id, nextAction, locationId, coords);
 
-      onScanComplete();
+      await onScanComplete();
       showResult('success', newRecord);
 
     } catch (error: any) {
-      // Handle Geolocation errors
-      if (error.code) {
+      // Handle Geolocation errors more specifically
+      if (error.code && typeof error.code === 'number') {
         switch(error.code) {
-          case error.PERMISSION_DENIED:
-            showResult('error', undefined, "Bạn đã từ chối quyền truy cập vị trí.");
+          case 1: // PERMISSION_DENIED
+            showResult('error', undefined, "Bạn đã từ chối quyền truy cập vị trí. Vui lòng cấp quyền trong cài đặt trình duyệt.");
             break;
-          case error.POSITION_UNAVAILABLE:
-            showResult('error', undefined, "Không thể xác định vị trí hiện tại.");
+          case 2: // POSITION_UNAVAILABLE
+            showResult('error', undefined, "Không thể xác định vị trí hiện tại. Vui lòng kiểm tra kết nối mạng và GPS.");
             break;
-          case error.TIMEOUT:
-            showResult('error', undefined, "Yêu cầu vị trí đã hết hạn.");
+          case 3: // TIMEOUT
+            showResult('error', undefined, "Yêu cầu vị trí đã hết hạn. Vui lòng thử lại.");
             break;
           default:
-            showResult('error', undefined, "Lỗi không xác định khi lấy vị trí.");
+            showResult('error', undefined, `Lỗi vị trí không xác định (Mã: ${error.code}).`);
             break;
         }
       } else {

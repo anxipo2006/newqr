@@ -1,26 +1,24 @@
 
 import React, { useState, useEffect } from 'react';
-// FIx: Import CurrentUser from types.ts
-import type { Employee, CurrentUser } from './types';
+import type { CurrentUser } from './types';
 import LoginScreen from './components/LoginScreen';
 import AdminDashboard from './components/AdminDashboard';
 import EmployeePortal from './components/EmployeePortal';
 import { LoadingIcon } from './components/icons';
+import { getInitialData } from './services/attendanceService';
 
-// FIX: Moved to types.ts to be shared across files.
-// export type CurrentUser = Employee | { id: 'admin'; name: 'Admin', username: 'admin' };
 
 function App() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // This effect now only runs once on mount to check session/initial state.
   useEffect(() => {
-    // Simulate initial loading
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
+    // In a real app, you might check for a saved session token here.
+    // For now, we just transition from the loading state.
+    setIsLoading(false);
   }, []);
+
 
   const handleLogout = () => {
     setCurrentUser(null);
@@ -41,10 +39,6 @@ function App() {
   let content;
   if (!currentUser) {
     content = <LoginScreen onLogin={handleLogin} />;
-    // FIX: Use a property unique to Employee ('deviceCode') as a type guard.
-    // This correctly narrows the type of `currentUser` to `Employee` for the EmployeePortal.
-    // The original `currentUser.id === 'admin'` check was not sufficient for TypeScript to narrow the type,
-    // because `Employee.id` is a string and could technically be 'admin'.
   } else if ('deviceCode' in currentUser) {
     content = <EmployeePortal employee={currentUser} onLogout={handleLogout} />;
   } else {

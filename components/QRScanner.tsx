@@ -27,13 +27,8 @@ const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, onScanError }) => 
       scanner.clear();
       try {
         const data = JSON.parse(decodedText);
-        if (data.locationId && data.exp) {
-          const nowInSeconds = Math.floor(Date.now() / 1000);
-          if (nowInSeconds > data.exp) {
-            onScanError('Mã QR đã hết hạn. Vui lòng thử lại.');
-          } else {
-            onScanSuccess(data.locationId);
-          }
+        if (data.locationId) {
+          onScanSuccess(data.locationId);
         } else {
           onScanError('Mã QR không hợp lệ (thiếu dữ liệu).');
         }

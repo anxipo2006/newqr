@@ -1,17 +1,19 @@
-// FIX: Import `AttendanceStatus` as a value, as it is an enum used at runtime.
+import { db } from './firebaseConfig';
+
 import { AttendanceStatus } from '../types';
-// FIX: The remaining imports are types and can be imported using `import type`.
 import type { Employee, AttendanceRecord, Shift, CurrentUser, Location } from '../types';
 import { getTimeToday } from '../utils/date';
 
-const EMPLOYEES_KEY = 'attendance_employees';
-const RECORDS_KEY = 'attendance_records';
-const SHIFTS_KEY = 'attendance_shifts';
-const LOCATIONS_KEY = 'attendance_locations';
+
+// --- Collection References ---
+// FIX: Use v8 compat syntax for collection references
+const locationsCol = db.collection('locations');
+const shiftsCol = db.collection('shifts');
+const employeesCol = db.collection('employees');
+const recordsCol = db.collection('records');
 
 
 // --- Geolocation Helpers ---
-
 const haversineDistance = (
   coords1: { latitude: number; longitude: number },
   coords2: { latitude: number; longitude: number }
@@ -34,326 +36,298 @@ const haversineDistance = (
 
 
 // --- Location Management ---
-export const getLocations = (): Location[] => {
-  const locationsJson = localStorage.getItem(LOCATIONS_KEY);
-  return locationsJson ? JSON.parse(locationsJson) : [];
+export const getLocations = async (): Promise<Location[]> => {
+  // FIX: Use v8 compat syntax for getting documents
+  const snapshot = await locationsCol.get();
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Location));
 };
 
-export const addLocation = (location: Omit<Location, 'id'>): Location => {
-  const locations = getLocations();
-  const newLocation: Location = {
-    ...location,
-    id: `loc_${new Date().getTime()}`,
-  };
-  localStorage.setItem(LOCATIONS_KEY, JSON.stringify([...locations, newLocation]));
-  return newLocation;
+export const addLocation = async (location: Omit<Location, 'id'>): Promise<Location> => {
+  // FIX: Use v8 compat syntax for adding a document
+  const docRef = await locationsCol.add(location);
+  return { ...location, id: docRef.id };
 };
 
-export const updateLocation = (locationId: string, updates: Partial<Omit<Location, 'id'>>): Location => {
-    const locations = getLocations();
-    const locationIndex = locations.findIndex(l => l.id === locationId);
-    if (locationIndex === -1) {
-        throw new Error('Không tìm thấy địa điểm.');
-    }
-    const updatedLocation = { ...locations[locationIndex], ...updates };
-    locations[locationIndex] = updatedLocation;
-    localStorage.setItem(LOCATIONS_KEY, JSON.stringify(locations));
-    return updatedLocation;
+export const updateLocation = async (locationId: string, updates: Partial<Omit<Location, 'id'>>): Promise<Location> => {
+    // FIX: Use v8 compat syntax for document reference, update, and get
+    const docRef = db.collection('locations').doc(locationId);
+    await docRef.update(updates);
+    const updatedDoc = await docRef.get();
+    return { ...updatedDoc.data(), id: locationId } as Location;
 };
 
-export const deleteLocation = (locationId: string): void => {
-  const locations = getLocations();
-  const updatedLocations = locations.filter(l => l.id !== locationId);
-  localStorage.setItem(LOCATIONS_KEY, JSON.stringify(updatedLocations));
-
-  // Unassign employees from the deleted location
-  const employees = getEmployees();
-  const updatedEmployees = employees.map(emp => {
-    if (emp.locationId === locationId) {
-      return { ...emp, locationId: undefined };
-    }
-    return emp;
-  });
-  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(updatedEmployees));
+export const deleteLocation = async (locationId: string): Promise<void> => {
+  // FIX: Use v8 compat syntax for deleting a document
+  await db.collection('locations').doc(locationId).delete();
+  // In a real app, you might want to handle unassigning employees using a Cloud Function for atomicity.
+  // For simplicity, we'll require manual reassignment.
 };
 
 
 // --- Authentication ---
-export const login = (
+export const login = async (
   role: 'admin' | 'employee',
   credentials: { username?: string; password?: string; deviceCode?: string }
-): CurrentUser | null => {
+): Promise<CurrentUser | null> => {
   if (role === 'admin') {
     if (credentials.username?.toLowerCase() === 'admin' && credentials.password === 'admin123') {
       return { id: 'admin', name: 'Admin', username: 'admin' };
     }
-    return null; // Admin login failed
+    return null;
   }
 
   if (role === 'employee') {
     if (!credentials.deviceCode) return null;
-    const employees = getEmployees();
-    const employee = employees.find(
-      (emp) => emp.deviceCode.toUpperCase() === credentials.deviceCode!.toUpperCase()
-    );
-    return employee || null; // Employee login failed if no match
+    // FIX: Use v8 compat syntax for query
+    const q = employeesCol.where("deviceCode", "==", credentials.deviceCode.toUpperCase()).limit(1);
+    const snapshot = await q.get();
+    if (snapshot.empty) {
+        return null;
+    }
+    const employeeDoc = snapshot.docs[0];
+    return { ...employeeDoc.data(), id: employeeDoc.id } as Employee;
   }
 
-  return null; // Should not happen
+  return null;
 };
-
 
 // --- Shift Management ---
-
-export const getShifts = (): Shift[] => {
-  const shiftsJson = localStorage.getItem(SHIFTS_KEY);
-  return shiftsJson ? JSON.parse(shiftsJson) : [];
+export const getShifts = async (): Promise<Shift[]> => {
+  // FIX: Use v8 compat syntax for getting documents
+  const snapshot = await shiftsCol.get();
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Shift));
 };
 
-export const addShift = (name: string, startTime: string, endTime: string): Shift => {
+export const addShift = async (name: string, startTime: string, endTime: string): Promise<Shift> => {
   if (!name.trim() || !startTime.trim() || !endTime.trim()) {
     throw new Error('Vui lòng điền đầy đủ thông tin ca làm việc.');
   }
-  const shifts = getShifts();
-  const newShift: Shift = {
-    id: `shift_${new Date().getTime()}`,
+  const newShift: Omit<Shift, 'id'> = {
     name: name.trim(),
     startTime,
     endTime,
   };
-  const updatedShifts = [...shifts, newShift];
-  localStorage.setItem(SHIFTS_KEY, JSON.stringify(updatedShifts));
-  return newShift;
+  // FIX: Use v8 compat syntax for adding a document
+  const docRef = await shiftsCol.add(newShift);
+  return { ...newShift, id: docRef.id };
 };
 
-export const updateShift = (shiftId: string, updates: Partial<Omit<Shift, 'id'>>): Shift => {
-    const shifts = getShifts();
-    const shiftIndex = shifts.findIndex(s => s.id === shiftId);
-    if (shiftIndex === -1) {
-        throw new Error('Không tìm thấy ca làm việc.');
-    }
-
-    const originalShift = shifts[shiftIndex];
-    const updatedShift = { ...originalShift, ...updates };
-
-    shifts[shiftIndex] = updatedShift;
-    localStorage.setItem(SHIFTS_KEY, JSON.stringify(shifts));
-
-    if (updates.name && updates.name !== originalShift.name) {
-        let records = getAttendanceRecords();
-        records = records.map(rec => {
-            if (rec.shiftName === originalShift.name) {
-                return { ...rec, shiftName: updatedShift.name };
-            }
-            return rec;
-        });
-        localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
-    }
-
-    return updatedShift;
-}
-
-
-export const deleteShift = (id: string): void => {
-  const shifts = getShifts();
-  const updatedShifts = shifts.filter(s => s.id !== id);
-  localStorage.setItem(SHIFTS_KEY, JSON.stringify(updatedShifts));
-  
-  const employees = getEmployees();
-  const updatedEmployees = employees.map(emp => {
-    if (emp.shiftId === id) {
-      return { ...emp, shiftId: undefined };
-    }
-    return emp;
-  });
-  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(updatedEmployees));
+export const updateShift = async (shiftId: string, updates: Partial<Omit<Shift, 'id'>>): Promise<Shift> => {
+    // FIX: Use v8 compat syntax for document reference, update, and get
+    const docRef = db.collection('shifts').doc(shiftId);
+    await docRef.update(updates);
+    const updatedDoc = await docRef.get();
+    return { ...updatedDoc.data(), id: shiftId } as Shift;
 };
+
+export const deleteShift = async (id: string): Promise<void> => {
+  // FIX: Use v8 compat syntax for deleting a document
+  await db.collection('shifts').doc(id).delete();
+};
+
 
 // --- Employee Management ---
-
-export const getEmployees = (): Employee[] => {
-  const employeesJson = localStorage.getItem(EMPLOYEES_KEY);
-  return employeesJson ? JSON.parse(employeesJson) : [];
+export const getEmployees = async (): Promise<Employee[]> => {
+  // FIX: Use v8 compat syntax for getting documents
+  const snapshot = await employeesCol.get();
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Employee));
 };
 
 const generateDeviceCode = (): string => {
     return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
-export const addEmployee = (name: string, username: string, password: string, shiftId?: string, locationId?: string): Employee => {
-  if (!name.trim()) throw new Error('Tên hiển thị không được để trống');
-  if (!username.trim()) throw new Error('Tên đăng nhập không được để trống');
-  if (!password.trim()) throw new Error('Mật khẩu không được để trống');
-
-  const employees = getEmployees();
+export const addEmployee = async (name: string, username: string, password: string, shiftId?: string, locationId?: string): Promise<Employee> => {
+  if (!name.trim() || !username.trim() || !password.trim()) {
+    throw new Error('Vui lòng điền đầy đủ thông tin.');
+  }
   
-  const usernameExists = employees.some(emp => emp.username.toLowerCase() === username.trim().toLowerCase());
-  if (usernameExists) {
-    throw new Error('Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.');
+  const trimmedUsername = username.trim();
+  // FIX: Use v8 compat syntax for query
+  const q = employeesCol.where("username", "==", trimmedUsername);
+  const existing = await q.get();
+  if (!existing.empty) {
+      throw new Error('Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.');
   }
 
-  const newEmployee: Employee = {
-    id: `emp_${new Date().getTime()}`,
+  const newEmployee: Omit<Employee, 'id'> = {
     name: name.trim(),
-    username: username.trim(),
-    password: password, // In a real app, this should be hashed
+    username: trimmedUsername,
+    password: password, // In a real app, this should be hashed server-side
     deviceCode: generateDeviceCode(),
-    shiftId: shiftId || undefined,
-    locationId: locationId || undefined,
+    shiftId: shiftId || null,
+    locationId: locationId || null,
   };
-  const updatedEmployees = [...employees, newEmployee];
-  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(updatedEmployees));
-  return newEmployee;
+  // FIX: Use v8 compat syntax for adding a document
+  const docRef = await employeesCol.add(newEmployee);
+  return { ...newEmployee, id: docRef.id };
 };
 
-export const updateEmployee = (employeeId: string, updates: Partial<Omit<Employee, 'id' | 'deviceCode'>>): Employee => {
-  const employees = getEmployees();
-  const employeeIndex = employees.findIndex(emp => emp.id === employeeId);
-  if (employeeIndex === -1) {
-    throw new Error('Không tìm thấy nhân viên.');
-  }
+export const updateEmployee = async (employeeId: string, updates: Partial<Omit<Employee, 'id' | 'deviceCode'>>): Promise<Employee> => {
+  // FIX: Use v8 compat syntax for document reference
+  const docRef = db.collection('employees').doc(employeeId);
 
   if (updates.username) {
-    const usernameExists = employees.some(emp => emp.id !== employeeId && emp.username.toLowerCase() === updates.username!.trim().toLowerCase());
-    if (usernameExists) {
-      throw new Error('Tên đăng nhập đã tồn tại.');
+    const trimmedUsername = updates.username.trim();
+    if (!trimmedUsername) {
+        throw new Error('Tên đăng nhập không được để trống.');
     }
+    // FIX: Use v8 compat syntax for query
+    const q = employeesCol.where("username", "==", trimmedUsername);
+    const existing = await q.get();
+    if (!existing.empty && existing.docs[0].id !== employeeId) {
+        throw new Error('Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.');
+    }
+    updates.username = trimmedUsername;
+  }
+  
+  if ('deviceCode' in updates) {
+      delete (updates as any).deviceCode;
   }
 
-  const originalEmployee = employees[employeeIndex];
-  const updatedEmployee = { 
-    ...originalEmployee, 
-    ...updates,
-    // Ensure password is not cleared if an empty string is passed
-    password: updates.password ? updates.password : originalEmployee.password
-  };
-
-  employees[employeeIndex] = updatedEmployee;
-  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(employees));
-
-  if (updates.name && updates.name !== originalEmployee.name) {
-    let records = getAttendanceRecords();
-    records = records.map(rec => {
-      if (rec.employeeId === employeeId) {
-        return { ...rec, employeeName: updatedEmployee.name };
-      }
-      return rec;
-    });
-    localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+  // FIX: Use v8 compat syntax for update and get
+  await docRef.update(updates);
+  
+  const updatedDoc = await docRef.get();
+  if (!updatedDoc.exists) {
+      throw new Error("Không tìm thấy nhân viên sau khi cập nhật.");
   }
-
-  return updatedEmployee;
+  return { ...updatedDoc.data(), id: updatedDoc.id } as Employee;
 };
 
-export const deleteEmployee = (id: string): void => {
-  let employees = getEmployees();
-  let records = getAttendanceRecords();
+export const deleteEmployee = async (employeeId: string): Promise<void> => {
+  // FIX: Use v8 compat syntax for batch and document reference
+  const batch = db.batch();
+  const employeeRef = db.collection('employees').doc(employeeId);
+  batch.delete(employeeRef);
+
+  // FIX: Use v8 compat syntax for query
+  const recordsQuery = recordsCol.where("employeeId", "==", employeeId);
+  const recordsSnapshot = await recordsQuery.get();
+  recordsSnapshot.forEach(recordDoc => {
+    batch.delete(recordDoc.ref);
+  });
   
-  const updatedEmployees = employees.filter(emp => emp.id !== id);
-  localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(updatedEmployees));
-  
-  const updatedRecords = records.filter(rec => rec.employeeId !== id);
-  localStorage.setItem(RECORDS_KEY, JSON.stringify(updatedRecords));
-};
-const firebaseConfig = {
-
-  apiKey: "AIzaSyCDtSJOvvOcakG3ZzxAZcC8wwCHBJoSIxE",
-
-  authDomain: "qrcheck-4db34.firebaseapp.com",
-
-  projectId: "qrcheck-4db34",
-
-  storageBucket: "qrcheck-4db34.firebasestorage.app",
-
-  messagingSenderId: "187674911175",
-
-  appId: "1:187674911175:web:714ea8a1ce52f38070f9e2",
-
-  measurementId: "G-4PL87N83M7"
-
+  await batch.commit();
 };
 
 // --- Attendance Management ---
-
-export const getAttendanceRecords = (): AttendanceRecord[] => {
-  const recordsJson = localStorage.getItem(RECORDS_KEY);
-  const records = recordsJson ? JSON.parse(recordsJson) : [];
-  return records.sort((a: AttendanceRecord, b: AttendanceRecord) => b.timestamp - a.timestamp);
+export const getAttendanceRecords = async (): Promise<AttendanceRecord[]> => {
+    // FIX: Use v8 compat syntax for query
+    const q = recordsCol.orderBy('timestamp', 'desc');
+    const snapshot = await q.get();
+    return snapshot.docs.map(doc => ({...doc.data(), id: doc.id} as AttendanceRecord));
 };
 
-export const addAttendanceRecord = (
-  employeeId: string, 
+export const getRecordsForEmployee = async (employeeId: string): Promise<AttendanceRecord[]> => {
+    // FIX: Use v8 compat syntax for query
+    const q = recordsCol.where('employeeId', '==', employeeId);
+    const snapshot = await q.get();
+    const records = snapshot.docs.map(doc => ({...doc.data(), id: doc.id} as AttendanceRecord));
+    // Sort client-side to avoid needing a composite index
+    return records.sort((a, b) => b.timestamp - a.timestamp);
+};
+
+export const getLastRecordForEmployee = async (employeeId: string): Promise<AttendanceRecord | null> => {
+    // FIX: Use v8 compat syntax for query
+    const q = recordsCol.where('employeeId', '==', employeeId);
+    const snapshot = await q.get();
+    if (snapshot.empty) {
+        return null;
+    }
+    // Sort client-side to get the latest record, avoiding a composite index
+    const records = snapshot.docs.map(doc => ({...doc.data(), id: doc.id} as AttendanceRecord));
+    records.sort((a, b) => b.timestamp - a.timestamp);
+    return records.length > 0 ? records[0] : null;
+};
+
+export const addAttendanceRecord = async (
+  employeeId: string,
   status: AttendanceStatus,
-  locationId: string,
-  coords?: { latitude: number; longitude: number; accuracy: number; }
-): AttendanceRecord => {
-  const locations = getLocations();
-  const location = locations.find(l => l.id === locationId);
+  scannedLocationId: string,
+  coords: { latitude: number; longitude: number; accuracy: number }
+): Promise<AttendanceRecord> => {
+  // FIX: Use v8 compat syntax for getting a document
+  const employeeSnap = await db.collection('employees').doc(employeeId).get();
+  if (!employeeSnap.exists) throw new Error('Nhân viên không tồn tại.');
+  const employee = { ...employeeSnap.data(), id: employeeSnap.id } as Employee;
 
-  if (!location) {
-    throw new Error('Địa điểm chấm công không hợp lệ hoặc đã bị xóa.');
+  const lastRecord = await getLastRecordForEmployee(employeeId);
+
+  if (status === AttendanceStatus.CHECK_IN && lastRecord?.status === AttendanceStatus.CHECK_IN) {
+    throw new Error('Bạn đã check-in rồi. Vui lòng check-out trước.');
+  }
+  if (status === AttendanceStatus.CHECK_OUT && lastRecord?.status !== AttendanceStatus.CHECK_IN) {
+    throw new Error('Bạn chưa check-in. Vui lòng check-in trước.');
   }
 
-  if (!coords) {
-    throw new Error('Không thể lấy được vị trí của bạn.');
-  }
-  const distance = haversineDistance(coords, location);
-  if (distance > location.radius) {
-    throw new Error(`Bạn phải ở trong bán kính ${location.radius}m của "${location.name}" để chấm công. Vị trí hiện tại của bạn cách ${Math.round(distance)}m.`);
+  if (employee.locationId && employee.locationId !== scannedLocationId) {
+      throw new Error('Mã QR không hợp lệ cho địa điểm làm việc của bạn.');
   }
 
-  const employees = getEmployees();
-  const employee = employees.find(e => e.id === employeeId);
-  if (!employee) throw new Error('Không tìm thấy nhân viên');
+  // FIX: Use v8 compat syntax for getting a document
+  const locationSnap = await db.collection('locations').doc(scannedLocationId).get();
+  if (!locationSnap.exists) throw new Error('Địa điểm làm việc không hợp lệ hoặc đã bị xóa.');
+  const location = { ...locationSnap.data(), id: locationSnap.id } as Location;
+  
+  const distance = haversineDistance(coords, { latitude: location.latitude, longitude: location.longitude });
+  
+  // Account for GPS inaccuracy. We only fail if the user's *closest possible* location
+  // (based on accuracy) is still outside the radius.
+  if (distance - coords.accuracy > location.radius) {
+      throw new Error(`Bạn đang ở quá xa địa điểm làm việc. (Khoảng cách: ${distance.toFixed(0)}m, bán kính cho phép: ${location.radius}m, độ chính xác vị trí: ${coords.accuracy.toFixed(0)}m)`);
+  }
 
-  const shifts = getShifts();
-  const shift = shifts.find(s => s.id === employee.shiftId);
+  let shiftName: string | undefined;
+  let isLate: boolean = false;
+  let isEarly: boolean = false;
 
-  const records = getAttendanceRecords();
-  const newRecord: AttendanceRecord = {
-    id: `rec_${new Date().getTime()}`,
+  if (employee.shiftId) {
+    // FIX: Use v8 compat syntax for getting a document
+    const shiftSnap = await db.collection('shifts').doc(employee.shiftId).get();
+    if (shiftSnap.exists) {
+        const shift = { ...shiftSnap.data(), id: shiftSnap.id } as Shift;
+        shiftName = shift.name;
+        const now = new Date();
+        const shiftStartTime = getTimeToday(shift.startTime);
+        const shiftEndTime = getTimeToday(shift.endTime);
+        const gracePeriodMinutes = 5; 
+        
+        if (status === AttendanceStatus.CHECK_IN) {
+            const graceTime = new Date(shiftStartTime.getTime() + gracePeriodMinutes * 60000);
+            isLate = now > graceTime;
+        } else if (status === AttendanceStatus.CHECK_OUT) {
+            isEarly = now < shiftEndTime;
+        }
+    }
+  }
+
+  const recordToSave = {
     employeeId,
     employeeName: employee.name,
     username: employee.username,
     timestamp: Date.now(),
     status,
-    shiftName: shift ? shift.name : undefined,
+    isLate,
+    isEarly,
+    latitude: coords.latitude,
+    longitude: coords.longitude,
+    accuracy: coords.accuracy,
+    ...(shiftName && { shiftName }),
   };
-  
-  if (coords) {
-    newRecord.latitude = coords.latitude;
-    newRecord.longitude = coords.longitude;
-    newRecord.accuracy = coords.accuracy;
-  }
 
-  if (shift) {
-    const now = new Date();
-    if (status === AttendanceStatus.CHECK_IN) {
-      const shiftStartTime = getTimeToday(shift.startTime);
-      // Add a 1 minute grace period for check-ins
-      shiftStartTime.setMinutes(shiftStartTime.getMinutes() + 1);
-      if (now > shiftStartTime) {
-        newRecord.isLate = true;
-      }
-    } else if (status === AttendanceStatus.CHECK_OUT) {
-      const shiftEndTime = getTimeToday(shift.endTime);
-      if (now < shiftEndTime) {
-        newRecord.isEarly = true;
-      }
-    }
-  }
-
-  const updatedRecords = [newRecord, ...records];
-  localStorage.setItem(RECORDS_KEY, JSON.stringify(updatedRecords));
-  return newRecord;
+  // FIX: Use v8 compat syntax for adding a document
+  const docRef = await recordsCol.add(recordToSave);
+  return { ...recordToSave, id: docRef.id } as AttendanceRecord;
 };
 
-export const getRecordsForEmployee = (employeeId: string): AttendanceRecord[] => {
-  const allRecords = getAttendanceRecords();
-  return allRecords.filter(record => record.employeeId === employeeId);
-};
-
-export const getLastRecordForEmployee = (employeeId: string): AttendanceRecord | undefined => {
-  const employeeRecords = getRecordsForEmployee(employeeId);
-  return employeeRecords[0]; // Already sorted descending by timestamp
+// --- Data Fetching ---
+export const getInitialData = async () => {
+    const [employees, records, shifts, locations] = await Promise.all([
+        getEmployees(),
+        getAttendanceRecords(),
+        getShifts(),
+        getLocations()
+    ]);
+    return { employees, records, shifts, locations };
 };

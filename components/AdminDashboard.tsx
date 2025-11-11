@@ -13,11 +13,12 @@ import {
   addLocation,
   updateLocation,
   deleteLocation,
+  getInitialData,
 } from '../services/attendanceService';
 import type { Employee, AttendanceRecord, Shift, Location } from '../types';
 import { AttendanceStatus } from '../types';
 import QRCodeGenerator from './QRCodeGenerator';
-import { QrCodeIcon, UserGroupIcon, ListBulletIcon, LogoutIcon, ClockIcon, CalendarDaysIcon, DocumentArrowDownIcon, PencilIcon, XCircleIcon, MapPinIcon, BuildingOffice2Icon } from './icons';
+import { QrCodeIcon, UserGroupIcon, ListBulletIcon, LogoutIcon, ClockIcon, CalendarDaysIcon, DocumentArrowDownIcon, PencilIcon, XCircleIcon, MapPinIcon, BuildingOffice2Icon, LoadingIcon } from './icons';
 import { formatTimestamp, formatDateForDisplay, getWeekRange, formatTimeToHHMM, calculateHours } from '../utils/date';
 
 type Tab = 'timesheet' | 'logs' | 'employees' | 'shifts' | 'locations' | 'qrcode';
@@ -32,6 +33,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   const [newEmployeeName, setNewEmployeeName] = useState('');
   const [newEmployeeUsername, setNewEmployeeUsername] = useState('');
@@ -44,88 +46,104 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
 
-  const loadData = () => {
-    setEmployees(getEmployees());
-    setRecords(getAttendanceRecords());
-    setShifts(getShifts());
-    setLocations(getLocations());
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const { employees, records, shifts, locations } = await getInitialData();
+      setEmployees(employees);
+      setRecords(records);
+      setShifts(shifts);
+      setLocations(locations);
+    } catch (error) {
+      console.error("Failed to load data:", error);
+      // Handle error display to the user
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const handleAddEmployee = (e: React.FormEvent) => {
+  const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     setEmployeeAddError('');
     try {
-      addEmployee(newEmployeeName, newEmployeeUsername, newEmployeePassword, selectedShiftId, selectedLocationId);
+      await addEmployee(newEmployeeName, newEmployeeUsername, newEmployeePassword, selectedShiftId, selectedLocationId);
       setNewEmployeeName('');
       setNewEmployeeUsername('');
       setNewEmployeePassword('');
       setSelectedShiftId('');
       setSelectedLocationId('');
-      loadData();
+      await loadData();
     } catch (error: any) {
       setEmployeeAddError(error.message);
     }
   };
 
-  const handleDeleteEmployee = (id: string) => {
+  const handleDeleteEmployee = async (id: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa nhân viên này? Tất cả dữ liệu chấm công của họ cũng sẽ bị xóa.')) {
-      deleteEmployee(id);
-      loadData();
+      await deleteEmployee(id);
+      await loadData();
     }
   };
 
-  const handleUpdateEmployee = (id: string, updates: Partial<Employee>): { success: boolean, message?: string } => {
+  const handleUpdateEmployee = async (id: string, updates: Partial<Employee>): Promise<{ success: boolean, message?: string }> => {
     try {
-      updateEmployee(id, updates);
+      await updateEmployee(id, updates);
       setEditingEmployee(null);
-      loadData();
+      await loadData();
       return { success: true };
     } catch (error: any) {
       return { success: false, message: error.message };
     }
   };
   
-  const handleAddShift = (name: string, startTime: string, endTime: string) => {
-    addShift(name, startTime, endTime);
-    loadData();
+  const handleAddShift = async (name: string, startTime: string, endTime: string) => {
+    await addShift(name, startTime, endTime);
+    await loadData();
   };
 
-  const handleDeleteShift = (id: string) => {
+  const handleDeleteShift = async (id: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa ca làm việc này? Nhân viên được phân công vào ca này sẽ không còn ca làm việc.')) {
-      deleteShift(id);
-      loadData();
+      await deleteShift(id);
+      await loadData();
     }
   };
 
-  const handleUpdateShift = (id: string, updates: Partial<Shift>) => {
-    updateShift(id, updates);
+  const handleUpdateShift = async (id: string, updates: Partial<Shift>) => {
+    await updateShift(id, updates);
     setEditingShift(null);
-    loadData();
+    await loadData();
   };
   
-  const handleAddLocation = (location: Omit<Location, 'id'>) => {
-    addLocation(location);
-    loadData();
+  const handleAddLocation = async (location: Omit<Location, 'id'>) => {
+    await addLocation(location);
+    await loadData();
   };
 
-  const handleDeleteLocation = (id: string) => {
+  const handleDeleteLocation = async (id: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa địa điểm này? Nhân viên được phân công vào địa điểm này sẽ không còn địa điểm làm việc.')) {
-      deleteLocation(id);
-      loadData();
+      await deleteLocation(id);
+      await loadData();
     }
   };
   
-  const handleUpdateLocation = (id: string, updates: Partial<Location>) => {
-    updateLocation(id, updates);
+  const handleUpdateLocation = async (id: string, updates: Partial<Location>) => {
+    await updateLocation(id, updates);
     setEditingLocation(null);
-    loadData();
+    await loadData();
   }
 
   const renderContent = () => {
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <LoadingIcon className="h-10 w-10 text-primary-500" />
+            </div>
+        );
+    }
     switch (activeTab) {
       case 'logs':
         return <AttendanceLog records={records} />;
@@ -180,11 +198,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <h1 className="text-xl font-bold text-primary-600 dark:text-primary-400">Bảng điều khiển Admin</h1>
           </div>
           <ul className="flex-grow p-2">
-            <TabButton icon={<CalendarDaysIcon className="h-6 w-6"/>} label="Bảng chấm công" isActive={activeTab === 'timesheet'} onClick={() => { setActiveTab('timesheet'); loadData(); }} />
-            <TabButton icon={<ListBulletIcon className="h-6 w-6"/>} label="Nhật ký Chấm công" isActive={activeTab === 'logs'} onClick={() => { setActiveTab('logs'); loadData(); }} />
-            <TabButton icon={<UserGroupIcon className="h-6 w-6"/>} label="Quản lý Nhân viên" isActive={activeTab === 'employees'} onClick={() => { setActiveTab('employees'); loadData(); }} />
-            <TabButton icon={<ClockIcon className="h-6 w-6"/>} label="Quản lý Ca làm việc" isActive={activeTab === 'shifts'} onClick={() => { setActiveTab('shifts'); loadData(); }} /> 
-            <TabButton icon={<BuildingOffice2Icon className="h-6 w-6"/>} label="Quản lý Địa điểm" isActive={activeTab === 'locations'} onClick={() => { setActiveTab('locations'); loadData(); }} />
+            <TabButton icon={<CalendarDaysIcon className="h-6 w-6"/>} label="Bảng chấm công" isActive={activeTab === 'timesheet'} onClick={() => { setActiveTab('timesheet'); }} />
+            <TabButton icon={<ListBulletIcon className="h-6 w-6"/>} label="Nhật ký Chấm công" isActive={activeTab === 'logs'} onClick={() => { setActiveTab('logs'); }} />
+            <TabButton icon={<UserGroupIcon className="h-6 w-6"/>} label="Quản lý Nhân viên" isActive={activeTab === 'employees'} onClick={() => { setActiveTab('employees'); }} />
+            <TabButton icon={<ClockIcon className="h-6 w-6"/>} label="Quản lý Ca làm việc" isActive={activeTab === 'shifts'} onClick={() => { setActiveTab('shifts'); }} /> 
+            <TabButton icon={<BuildingOffice2Icon className="h-6 w-6"/>} label="Quản lý Địa điểm" isActive={activeTab === 'locations'} onClick={() => { setActiveTab('locations'); }} />
             <TabButton icon={<QrCodeIcon className="h-6 w-6"/>} label="Mã QR Chấm công" isActive={activeTab === 'qrcode'} onClick={() => setActiveTab('qrcode')} />
           </ul>
           <div className="p-2 border-t dark:border-gray-700">
@@ -309,8 +327,8 @@ const EmployeeManagement: React.FC<{
   selectedLocationId: string,
   setSelectedLocationId: (id: string) => void,
   employeeAddError: string,
-  onAddEmployee: (e: React.FormEvent) => void,
-  onDeleteEmployee: (id: string) => void,
+  onAddEmployee: (e: React.FormEvent) => Promise<void>,
+  onDeleteEmployee: (id: string) => Promise<void>,
   onEditEmployee: (employee: Employee) => void,
 }> = ({ employees, shifts, locations, newEmployeeName, setNewEmployeeName, newEmployeeUsername, setNewEmployeeUsername, newEmployeePassword, setNewEmployeePassword, selectedShiftId, setSelectedShiftId, selectedLocationId, setSelectedLocationId, employeeAddError, onAddEmployee, onDeleteEmployee, onEditEmployee }) => {
   const shiftMap = new Map(shifts.map(s => [s.id, s.name]));
@@ -411,8 +429,8 @@ const EmployeeManagement: React.FC<{
 
 const ShiftManagement: React.FC<{
   shifts: Shift[],
-  onAddShift: (name: string, startTime: string, endTime: string) => void,
-  onDeleteShift: (id: string) => void,
+  onAddShift: (name: string, startTime: string, endTime: string) => Promise<void>,
+  onDeleteShift: (id: string) => Promise<void>,
   onEditShift: (shift: Shift) => void,
 }> = ({ shifts, onAddShift, onDeleteShift, onEditShift }) => {
   const [name, setName] = useState('');
@@ -420,11 +438,11 @@ const ShiftManagement: React.FC<{
   const [endTime, setEndTime] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     try {
-      onAddShift(name, startTime, endTime);
+      await onAddShift(name, startTime, endTime);
       setName('');
       setStartTime('');
       setEndTime('');
@@ -491,8 +509,8 @@ const ShiftManagement: React.FC<{
 
 const LocationManagement: React.FC<{
   locations: Location[],
-  onAddLocation: (location: Omit<Location, 'id'>) => void,
-  onDeleteLocation: (id: string) => void,
+  onAddLocation: (location: Omit<Location, 'id'>) => Promise<void>,
+  onDeleteLocation: (id: string) => Promise<void>,
   onEditLocation: (location: Location) => void,
 }> = ({ locations, onAddLocation, onDeleteLocation, onEditLocation }) => {
     const [name, setName] = useState('');
@@ -519,14 +537,14 @@ const LocationManagement: React.FC<{
       );
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setMessage(null);
         if (name.trim() === '' || latitude === '' || longitude === '' || radius === '' || radius <= 0) {
             setMessage({ type: 'error', text: 'Vui lòng điền đầy đủ thông tin và bán kính phải là số dương.' });
             return;
         }
-        onAddLocation({ name, latitude, longitude, radius });
+        await onAddLocation({ name, latitude, longitude, radius });
         setName('');
         setLatitude('');
         setLongitude('');
@@ -800,7 +818,7 @@ const EditEmployeeModal: React.FC<{
   shifts: Shift[];
   locations: Location[];
   onClose: () => void;
-  onSave: (id: string, updates: Partial<Employee>) => { success: boolean, message?: string };
+  onSave: (id: string, updates: Partial<Employee>) => Promise<{ success: boolean, message?: string }>;
 }> = ({ employee, shifts, locations, onClose, onSave }) => {
   const [name, setName] = useState(employee.name);
   const [username, setUsername] = useState(employee.username);
@@ -809,7 +827,7 @@ const EditEmployeeModal: React.FC<{
   const [locationId, setLocationId] = useState(employee.locationId || '');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -824,7 +842,7 @@ const EditEmployeeModal: React.FC<{
       updates.password = password;
     }
 
-    const result = onSave(employee.id, updates);
+    const result = await onSave(employee.id, updates);
     if (!result.success) {
       setError(result.message || 'Đã xảy ra lỗi không xác định.');
     }
@@ -887,7 +905,7 @@ const EditEmployeeModal: React.FC<{
 const EditShiftModal: React.FC<{
   shift: Shift;
   onClose: () => void;
-  onSave: (id: string, updates: Partial<Shift>) => void;
+  onSave: (id: string, updates: Partial<Shift>) => Promise<void>;
 }> = ({ shift, onClose, onSave }) => {
   const [name, setName] = useState(shift.name);
   const [startTime, setStartTime] = useState(shift.startTime);
@@ -936,7 +954,7 @@ const EditShiftModal: React.FC<{
 const EditLocationModal: React.FC<{
   location: Location;
   onClose: () => void;
-  onSave: (id: string, updates: Partial<Location>) => void;
+  onSave: (id: string, updates: Partial<Location>) => Promise<void>;
 }> = ({ location, onClose, onSave }) => {
   const [name, setName] = useState(location.name);
   const [latitude, setLatitude] = useState(location.latitude);

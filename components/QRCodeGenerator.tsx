@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Location } from '../types';
 
-const QR_CODE_VALIDITY_SECONDS = 30;
-
 interface QRCodeGeneratorProps {
     locations: Location[];
 }
@@ -11,7 +9,6 @@ interface QRCodeGeneratorProps {
 const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({ locations }) => {
     const [selectedLocationId, setSelectedLocationId] = useState<string>('');
     const [qrValue, setQrValue] = useState<string>('');
-    const [countdown, setCountdown] = useState(QR_CODE_VALIDITY_SECONDS);
 
     useEffect(() => {
         if (!selectedLocationId) {
@@ -22,23 +19,12 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({ locations }) => {
         const generateQrValue = () => {
             const payload = {
                 locationId: selectedLocationId,
-                exp: Math.floor(Date.now() / 1000) + QR_CODE_VALIDITY_SECONDS,
             };
             setQrValue(JSON.stringify(payload));
-            setCountdown(QR_CODE_VALIDITY_SECONDS);
         };
         
-        generateQrValue(); // Initial generation
-        const interval = setInterval(generateQrValue, QR_CODE_VALIDITY_SECONDS * 1000);
-        
-        const countdownInterval = setInterval(() => {
-            setCountdown(prev => (prev > 0 ? prev - 1 : 0));
-        }, 1000);
+        generateQrValue();
 
-        return () => {
-            clearInterval(interval);
-            clearInterval(countdownInterval);
-        };
     }, [selectedLocationId]);
 
     if(locations.length === 0) {
@@ -52,8 +38,8 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({ locations }) => {
 
     return (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 flex flex-col items-center justify-center h-full">
-            <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Mã QR Chấm Công Động</h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">Chọn một địa điểm để tạo mã QR. Mã sẽ tự động làm mới.</p>
+            <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">Mã QR Chấm Công</h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">Chọn một địa điểm để tạo mã QR. Mã này là tĩnh và có thể in ra.</p>
             
             <div className="w-full max-w-xs mb-6">
                 <label htmlFor="location-qr-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Chọn địa điểm</label>
@@ -79,10 +65,6 @@ const QRCodeGenerator: React.FC<QRCodeGeneratorProps> = ({ locations }) => {
                                 <p>Đang tạo mã...</p>
                             </div>
                         )}
-                    </div>
-                    <div className="mt-4 text-center">
-                        <p className="text-gray-500 dark:text-gray-400">Mã sẽ làm mới sau:</p>
-                        <p className="text-2xl font-bold text-primary-600 dark:text-primary-400">{countdown} giây</p>
                     </div>
                 </>
             ) : (
